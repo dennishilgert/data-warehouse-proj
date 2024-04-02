@@ -9,4 +9,6 @@ The access token can be generated with this `kubectl get secret admin-user -n ku
 
 Atfer MinIO has been deployed to the Kubernetes cluster, login to the MinIO console and create a bucket named `weather-data`.
 
+Important: You need to replace the API_KEY in the file `fetch_and_store.py` manually with the key provided in the project submission.
+
 The data-collection can be startet with the command `python3 fetch_and_store.py`. The script will collect the weather data for defined cities in a specific interval.
