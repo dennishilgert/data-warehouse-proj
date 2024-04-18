@@ -10,16 +10,21 @@ import boto3
 from io import BytesIO
 import pandas as pd
 from botocore.exceptions import NoCredentialsError
+from dotenv import load_dotenv
+import os
+
+# Load environment variables from a .env file
+load_dotenv()
 
 # Configuration for OpenWeatherMap API and MinIO storage
-API_KEY = 'OPEN_WEATHER_MAP_API_KEY'
-BASE_URL = 'http://api.openweathermap.org/data/2.5/weather'
-cities = ['Stuttgart', 'Herrenberg', 'Böblingen', 'Leonberg', 'Ludwigsburg']
+api_key = os.getenv('API_KEY')
+base_url = os.getenv('API_BASE_URL')
+cities = os.getenv('CITIES').split(',')
 
-MINIO_ENDPOINT = 'localhost:9000'
-MINIO_ROOT_USER = 'minio'
-MINIO_ROOT_PASSWORD = '9606ece0896b8c8cdafee7f044807d665b4ae2f5'
-BUCKET_NAME = 'weather-data'
+minio_endpoint = os.getenv('MINIO_ENDPOINT')
+minio_root_user = os.getenv('MINIO_ROOT_USER')
+minio_root_password = os.getenv('MINIO_ROOT_PASSWORD')
+bucket_name = os.getenv('MINIO_BUCKET_NAME')
 
 def current_milli_time():
     """
@@ -104,33 +109,59 @@ def upload_to_minio(dataframe, client, bucket_name, object_name):
 
 
 
+def check_and_create_bucket(client, bucket_name):
+    """
+    Check if a MinIO bucket exists and create it if it does not.
+
+    Args:
+        client: MinIO client object.
+        bucket_name (str): Name of the bucket to check and possibly create.
+
+    Prints:
+        Status of bucket creation or existence.
+    """
+    try:
+        existing_buckets = [bucket['Name'] for bucket in client.list_buckets()['Buckets']]
+        if bucket_name not in existing_buckets:
+            client.create_bucket(Bucket=bucket_name)
+            print(f'Bucket "{bucket_name}" created successfully.')
+        else:
+            print(f'Bucket "{bucket_name}" already exists.')
+    except Exception as e:
+        print(f'Error checking or creating bucket: {e}')
+
+
+
 def main():
     """
     Main function to orchestrate fetching weather data, processing it, and uploading to MinIO.
     """
     s3_client = boto3.client('s3',
-                             endpoint_url=f'http://{MINIO_ENDPOINT}',
-                             aws_access_key_id=MINIO_ROOT_USER,
-                             aws_secret_access_key=MINIO_ROOT_PASSWORD,
+                             endpoint_url=f'http://{minio_endpoint}',
+                             aws_access_key_id=minio_root_user,
+                             aws_secret_access_key=minio_root_password,
                              region_name='eu-west-1',
                              config=boto3.session.Config(signature_version='s3v4'))
     
+    # Ensure bucket exists
+    check_and_create_bucket(s3_client, bucket_name)
+
     count = 10
     i = 1
     while i < count + 1:
         all_weather_data = None
         for city in cities:
             print(f'fetching weather for {city}')
-            weather_data = fetch_weather_data(f'{BASE_URL}?q={city}&appid={API_KEY}&units=metric')
+            weather_data = fetch_weather_data(f'{base_url}?q={city}&appid={api_key}&units=metric')
             all_weather_data = data_to_dataframe(weather_data, all_weather_data)
         
         if all_weather_data is not None:
             print(all_weather_data)
             file_name = f'weather-data-aggregated-{current_milli_time()}.parquet'
-            upload_to_minio(all_weather_data, s3_client, BUCKET_NAME, file_name)
+            upload_to_minio(all_weather_data, s3_client, bucket_name, file_name)
         
         i += 1
-        time.sleep(10)
+        time.sleep(5)
 
 
 
